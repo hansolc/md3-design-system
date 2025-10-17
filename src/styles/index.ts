@@ -9,5 +9,9 @@ export { light, dark } from './color'
 export { lightElevation, darkElevation } from './elevation'
 export type { ElevationLevel, Elevation, ElevationScale } from './elevation'
 
+// Shape
+export { shape } from './shape'
+export type { ShapeScale, ShapeTokens, Shape } from './shape'
+
 // Theme Provider
 export { ThemeProvider } from './ThemeProvider'
