@@ -1,0 +1,341 @@
+# Design System Component Guidelines
+
+## Emotion Theme Type Inference Setup
+
+### Theme Configuration Pattern
+
+When using Emotion for design systems, follow this pattern to enable proper TypeScript type inference:
+
+**1. Define theme object first, then extract type:**
+
+```typescript
+// ✅ Correct
+import { textTokens } from '@/components/Text/tokens'
+
+export const theme = {
+  text: textTokens,
+}
+
+export type AppTheme = typeof theme
+```
+
+**2. Extend Emotion's Theme interface:**
+
+```typescript
+// emotion.d.ts
+import '@emotion/react'
+import type { AppTheme } from './theme'
+
+declare module '@emotion/react' {
+  export interface Theme extends AppTheme {}
+}
+```
+
+**❌ Avoid circular references:**
+
+```typescript
+// ❌ Wrong - Creates circular reference
+import type { Theme } from '@emotion/react'
+
+export const theme: Theme = {
+  text: textTokens,
+}
+```
+
+### Key Points:
+
+- Define theme object without type annotation
+- Use `typeof` to extract the type
+- Extend Emotion's Theme interface in a separate declaration file
+- This enables full autocomplete and type safety in `css` prop and `useTheme()`
+
+---
+
+## Polymorphic Component Pattern
+
+### Component Structure
+
+For components that should render as different HTML elements (polymorphic), use this pattern:
+
+**1. Define Props Interface:**
+
+```typescript
+interface _ComponentProps {
+  variant?: VariantType // Optional with defaults
+  size?: SizeType // Optional with defaults
+  children?: React.ReactNode
+}
+
+type ComponentProps<T extends React.ElementType = 'default'> =
+  PolymorphicComponentProps<T, _ComponentProps>
+
+type ComponentType = <C extends React.ElementType = 'default'>(
+  props: ComponentProps<C> & { ref?: PolymorphicRef<C> }
+) => React.ReactElement | null
+```
+
+**2. Implementation with forwardRef:**
+
+```typescript
+const Component: ComponentType = forwardRef(
+  <T extends React.ElementType = 'span'>(
+    { as, variant = 'default', size = 'md', ...props }: ComponentProps<T>,
+    ref?: PolymorphicRef<T>['ref']
+  ): React.ReactElement | null => {
+    const Element = as || 'span'
+    return <Element ref={ref} {...props} />
+  }
+) as ComponentType
+```
+
+### Why Optional Props + Default Values?
+
+**TypeScript's forwardRef limitation:**
+
+- `forwardRef` doesn't fully support generic render functions
+- Required props cause type conflicts: `Omit<Props, 'ref'>` loses required properties
+- **Solution:** Make props optional and provide default values
+
+```typescript
+// ✅ Works with forwardRef
+interface Props {
+  variant?: Variant // Optional
+}
+const Component = ({ variant = 'default' }: Props) => {} // Default value
+
+// ❌ Type error with forwardRef
+interface Props {
+  variant: Variant // Required - causes conflict
+}
+```
+
+### Type Assertion Pattern
+
+Always use type assertion at the end:
+
+```typescript
+) as ComponentType
+```
+
+This is the **industry-standard pattern** because:
+
+- forwardRef doesn't natively support generic polymorphic components
+- Runtime behavior is correct
+- Type safety is maintained at the consumer level
+
+---
+
+## Style Logic Separation
+
+### Separate Style Functions from Components
+
+**✅ Best Practice:**
+
+```typescript
+// Separated, testable, reusable
+const getTextStyle = (theme: Theme, variant: Variant, size: Size) => {
+  const token = theme.text[variant][size]
+  return css({
+    fontSize: `${token.fontSize}px`,
+    fontWeight: token.fontWeight,
+    lineHeight: `${token.lineHeight}px`,
+    letterSpacing: `${token.letterSpacing}px`,
+  })
+}
+
+const Component = () => {
+  return (
+    <Element css={(theme: Theme) => getTextStyle(theme, variant, size)} />
+  )
+}
+```
+
+**Benefits:**
+
+- Testable: Can test style logic independently
+- Reusable: Can share across components
+- Maintainable: Clear separation of concerns
+- Type-safe: Full theme type inference
+
+**❌ Avoid inline styles:**
+
+```typescript
+// ❌ Hard to test, not reusable
+<Element css={css`
+  font-size: ${theme.text[variant][size].fontSize}px;
+`} />
+```
+
+---
+
+## Component Composition Pattern
+
+### Creating Variant-Specific Components
+
+When creating preset variants (Display, Title, Label, etc.), use simple wrapper pattern:
+
+**✅ Recommended Pattern:**
+
+```typescript
+// Base type for all variants
+type TextBaseProps = {
+  as?: React.ElementType
+  size?: TextSize
+  children?: React.ReactNode
+  className?: string
+  style?: React.CSSProperties
+  ref?: React.Ref<any>
+}
+
+// Variant components - no forwardRef needed
+const Display = (props: TextBaseProps) => {
+  return <Text variant="display" {...props} />
+}
+
+const Title = (props: TextBaseProps) => {
+  return <Text variant="title" {...props} />
+}
+```
+
+**Why no forwardRef?**
+
+- Base `Text` component already handles ref forwarding
+- Wrapper just passes props through
+- Simpler, less boilerplate
+- ref support is automatic
+
+**Benefits:**
+
+- Explicit API: Only expose props you want
+- Type control: Prevent prop overload from `Pick`/`Omit`
+- Simple: No complex type gymnastics
+- ref works: Automatically forwarded to base component
+
+---
+
+## Design Token Integration
+
+### Token Structure
+
+```typescript
+// tokens.ts
+export const textTokens: TextScale = {
+  display: {
+    lg: { fontWeight: 400, fontSize: 57, lineHeight: 64, letterSpacing: -0.25 },
+    md: { fontWeight: 400, fontSize: 45, lineHeight: 52, letterSpacing: 0 },
+    sm: { fontWeight: 400, fontSize: 36, lineHeight: 44, letterSpacing: 0 },
+  },
+  // ... more variants
+}
+```
+
+### Component Integration
+
+```typescript
+const getStyle = (theme: Theme, variant: Variant, size: Size) => {
+  const token = theme.text[variant][size] // Type-safe access
+  return css({
+    /* use token values */
+  })
+}
+```
+
+---
+
+## Package Dependencies
+
+### Emotion Setup
+
+**Required:**
+
+- `@emotion/react` - Core functionality, css prop
+
+**Optional:**
+
+- `@emotion/styled` - If you prefer styled-components API
+- Most design systems (Toss, Kakao) use only `@emotion/react` with `css` prop
+
+**Vite Integration:**
+
+```typescript
+// vite.config.ts
+import tsconfigPaths from 'vite-tsconfig-paths'
+
+export default defineConfig({
+  plugins: [
+    react({ jsxImportSource: '@emotion/react' }),
+    tsconfigPaths(), // Auto-reads tsconfig paths
+  ],
+})
+```
+
+---
+
+## Complete Example
+
+```typescript
+// Text.tsx
+import { forwardRef } from 'react'
+import { css } from '@emotion/react'
+import type { Theme } from '@emotion/react'
+import type { PolymorphicComponentProps, PolymorphicRef } from '@/types/polymorphic'
+
+// 1. Props definition (optional + defaults)
+interface _TextProps {
+  variant?: 'display' | 'title' | 'body'
+  size?: 'lg' | 'md' | 'sm'
+  children?: React.ReactNode
+}
+
+type TextProps<T extends React.ElementType = 'span'> =
+  PolymorphicComponentProps<T, _TextProps>
+
+type TextComponent = <C extends React.ElementType = 'span'>(
+  props: TextProps<C> & { ref?: PolymorphicRef<C> }
+) => React.ReactElement | null
+
+// 2. Separated style logic
+const getTextStyle = (theme: Theme, variant: Variant, size: Size) => {
+  const token = theme.text[variant][size]
+  return css({
+    fontSize: `${token.fontSize}px`,
+    fontWeight: token.fontWeight,
+    lineHeight: `${token.lineHeight}px`,
+    letterSpacing: `${token.letterSpacing}px`,
+  })
+}
+
+// 3. Component implementation
+const Text: TextComponent = forwardRef(
+  <T extends React.ElementType = 'span'>(
+    { as, variant = 'body', size = 'lg', ...props }: TextProps<T>,
+    ref?: PolymorphicRef<T>['ref']
+  ): React.ReactElement | null => {
+    const Element = as || 'span'
+    return (
+      <Element
+        ref={ref}
+        css={(theme: Theme) => getTextStyle(theme, variant, size)}
+        {...props}
+      />
+    )
+  }
+) as TextComponent
+
+export default Text
+```
+
+---
+
+## Summary Checklist
+
+- [ ] Theme type inference setup (no circular references)
+- [ ] Props are optional with default values (for forwardRef compatibility)
+- [ ] Style logic separated into functions
+- [ ] Type assertion `as ComponentType` used
+- [ ] Component composition uses simple wrappers (no redundant forwardRef)
+- [ ] Only `@emotion/react` dependency (styled is optional)
+- [ ] Full TypeScript type safety maintained
+- [ ] ref forwarding works automatically
+
+This pattern is production-tested and used by major Korean tech companies (Toss, Kakao, Daangn).
