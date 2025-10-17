@@ -1,0 +1,670 @@
+---
+alwaysApply: false
+---
+
+## 2. Style Definition Patterns
+
+### 2.1 Define Style Functions Outside Components
+
+**✅ Best Practice:**
+
+```typescript
+import { css, type SerializedStyles } from '@emotion/react'
+
+// Define outside component - prevents recreation on every render
+const createButtonStyles = (
+  variant: 'primary' | 'secondary',
+  size: 'sm' | 'md' | 'lg'
+): SerializedStyles =>
+  css({
+    padding: size === 'sm' ? '8px 16px' : size === 'md' ? '12px 24px' : '16px 32px',
+    backgroundColor: variant === 'primary' ? '#007bff' : '#6c757d',
+    color: 'white',
+    border: 'none',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    '&:hover': {
+      opacity: 0.8,
+    },
+  })
+
+const Button = ({ variant = 'primary', size = 'md', children }) => {
+  // Call inside component
+  const buttonStyles = createButtonStyles(variant, size)
+  return <button css={buttonStyles}>{children}</button>
+}
+```
+
+**❌ Anti-pattern:**
+
+```typescript
+// ❌ Inline definition - recreated on every render
+const Button = ({ variant, size, children }) => {
+  return (
+    <button
+      css={css({
+        padding: size === 'sm' ? '8px 16px' : '12px 24px',
+        backgroundColor: variant === 'primary' ? '#007bff' : '#6c757d',
+        // ...
+      })}
+    >
+      {children}
+    </button>
+  )
+}
+```
+
+### Why:
+
+- Prevents style recreation on every render
+- Testable style logic
+- Reusable across components
+- Better readability
+
+---
+
+## 3. Performance Optimization - useMemo
+
+### Use useMemo for Dynamic Styles
+
+When styles change based on props, use `useMemo` to prevent unnecessary recalculation.
+
+**✅ Best Practice:**
+
+```typescript
+import { useMemo } from 'react'
+import { css, type SerializedStyles } from '@emotion/react'
+
+const createFlexStyles = (
+  direction?: CSSProperties['flexDirection'],
+  gap?: CSSProperties['gap'],
+  alignItems?: CSSProperties['alignItems']
+): SerializedStyles =>
+  css({
+    display: 'flex',
+    flexDirection: direction,
+    gap: gap,
+    alignItems: alignItems,
+  })
+
+const Flex = ({ direction, gap, alignItems, children }) => {
+  // Recalculate only when props change
+  const flexStyles = useMemo(
+    () => createFlexStyles(direction, gap, alignItems),
+    [direction, gap, alignItems]
+  )
+
+  return <div css={flexStyles}>{children}</div>
+}
+```
+
+**❌ Not optimized:**
+
+```typescript
+const Flex = ({ direction, gap, alignItems, children }) => {
+  // Recalculated on every render
+  const flexStyles = createFlexStyles(direction, gap, alignItems)
+  return <div css={flexStyles}>{children}</div>
+}
+```
+
+### When to use useMemo?
+
+**Use it when:**
+
+- Styles change dynamically based on props
+- Style calculation is complex
+- Component renders frequently
+
+**Don't need it when:**
+
+- Static styles (no props dependency)
+- Style function is defined outside component with no arguments
+
+---
+
+## 4. Type Safety
+
+### Specify SerializedStyles Type
+
+Explicitly type style function returns for better type safety.
+
+**✅ Best Practice:**
+
+```typescript
+import { css, type SerializedStyles } from '@emotion/react'
+
+const getTextStyle = (fontSize: number, fontWeight: number): SerializedStyles =>
+  css({
+    fontSize: `${fontSize}px`,
+    fontWeight: fontWeight,
+  })
+```
+
+**❌ No explicit type:**
+
+```typescript
+// ❌ Relies on type inference
+const getTextStyle = (fontSize: number, fontWeight: number) =>
+  css({
+    fontSize: `${fontSize}px`,
+    fontWeight: fontWeight,
+  })
+```
+
+---
+
+## 5. Theme Usage
+
+### Extend Theme Type
+
+Extend Theme type in `emotion.d.ts` for autocomplete and type checking.
+
+**theme.ts:**
+
+```typescript
+import { textTokens } from '@/components/Text/tokens'
+import { light, dark } from './color'
+
+export type ThemeMode = 'light' | 'dark'
+
+// 1. Define theme object first
+export const createTheme = (mode: ThemeMode) => ({
+  text: textTokens,
+  colors: mode === 'light' ? light : dark,
+  mode,
+})
+
+// 2. Extract type using typeof
+export type AppTheme = ReturnType<typeof createTheme>
+```
+
+**emotion.d.ts:**
+
+```typescript
+import '@emotion/react'
+import type { AppTheme } from './theme'
+
+declare module '@emotion/react' {
+  // Extend Emotion's Theme with AppTheme
+  export interface Theme extends AppTheme {}
+}
+```
+
+### Theme Access Methods
+
+**Method 1: Function in css prop (Recommended)**
+
+```typescript
+import { css, type Theme } from '@emotion/react'
+
+const getTextStyle = (theme: Theme, variant: string) => {
+  const token = theme.text[variant].lg
+  return css({
+    fontSize: `${token.fontSize}px`,
+    fontWeight: token.fontWeight,
+  })
+}
+
+const Text = ({ variant = 'body' }) => {
+  return (
+    <span css={(theme: Theme) => getTextStyle(theme, variant)}>
+      Hello
+    </span>
+  )
+}
+```
+
+**Method 2: useTheme hook**
+
+```typescript
+import { useTheme } from '@emotion/react'
+import type { Theme } from '@emotion/react'
+
+const Text = () => {
+  const theme = useTheme() as Theme
+
+  const styles = css({
+    color: theme.colors.primary,
+  })
+
+  return <span css={styles}>Hello</span>
+}
+```
+
+---
+
+## 6. Render Delegation Pattern (asChild)
+
+### Using Radix UI Slot
+
+A pattern to merge component styles into child elements. More explicit and predictable than polymorphic pattern.
+
+**✅ Best Practice:**
+
+```typescript
+import { forwardRef, useMemo } from 'react'
+import { Slot, Slottable } from '@radix-ui/react-slot'
+import { css, type SerializedStyles } from '@emotion/react'
+
+interface FlexProps extends React.HTMLAttributes<HTMLDivElement> {
+  asChild?: boolean
+  children?: React.ReactNode
+  direction?: CSSProperties['flexDirection']
+  gap?: CSSProperties['gap']
+  alignItems?: CSSProperties['alignItems']
+}
+
+// 1. Define style function outside component
+const createFlexStyles = (
+  direction?: CSSProperties['flexDirection'],
+  gap?: CSSProperties['gap'],
+  alignItems?: CSSProperties['alignItems']
+): SerializedStyles =>
+  css({
+    display: 'flex',
+    flexDirection: direction,
+    gap: gap,
+    alignItems: alignItems,
+  })
+
+const Flex = forwardRef<HTMLDivElement, FlexProps>(
+  ({ asChild = false, children, direction, gap, alignItems, ...restProps }, ref) => {
+    // 2. Memoize styles
+    const flexStyles = useMemo(
+      () => createFlexStyles(direction, gap, alignItems),
+      [direction, gap, alignItems]
+    )
+
+    // 3. Render delegation with Slottable
+    const Comp = asChild ? Slot : 'div'
+
+    return (
+      <Comp ref={ref} css={flexStyles} {...restProps}>
+        <Slottable>{children}</Slottable>
+      </Comp>
+    )
+  }
+)
+
+Flex.displayName = 'Flex'
+
+export default Flex
+```
+
+### Usage Examples
+
+```typescript
+// Normal usage - renders as div
+<Flex direction="row" gap="16px">
+  <div>Item 1</div>
+  <div>Item 2</div>
+</Flex>
+
+// asChild usage - Flex styles merge into header
+<Flex asChild gap="16px" alignItems="center">
+  <header>
+    <h1>Title</h1>
+    <nav>Menu</nav>
+  </header>
+</Flex>
+```
+
+### Benefits:
+
+- Eliminates if-else branching
+- Slottable correctly handles children
+- More explicit and predictable behavior
+- Consistent with Radix UI ecosystem
+
+---
+
+## 7. Style Writing Rules
+
+### Use Object Styles (Recommended)
+
+**✅ Object Styles (Recommended):**
+
+```typescript
+const styles = css({
+  display: 'flex',
+  flexDirection: 'column',
+  padding: '16px',
+  backgroundColor: '#ffffff',
+  '&:hover': {
+    backgroundColor: '#f5f5f5',
+  },
+  '@media (min-width: 768px)': {
+    flexDirection: 'row',
+  },
+})
+```
+
+**vs. String Styles:**
+
+```typescript
+const styles = css`
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  background-color: #ffffff;
+
+  &:hover {
+    background-color: #f5f5f5;
+  }
+
+  @media (min-width: 768px) {
+    flex-direction: row;
+  }
+`
+```
+
+### Object Styles Benefits:
+
+- Better type checking
+- IDE autocomplete support
+- camelCase property names (JavaScript convention)
+- Catch errors at compile time instead of runtime
+- Better performance (no parsing needed)
+
+---
+
+## 8. Conditional Styles
+
+### Conditional Style Patterns
+
+**✅ Best Practice:**
+
+```typescript
+const createButtonStyles = (
+  variant: 'primary' | 'secondary',
+  disabled: boolean
+): SerializedStyles =>
+  css({
+    padding: '12px 24px',
+    backgroundColor: variant === 'primary' ? '#007bff' : '#6c757d',
+    color: 'white',
+    opacity: disabled ? 0.6 : 1,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    '&:hover': {
+      // Conditional hover styles
+      ...(disabled ? {} : { opacity: 0.8 }),
+    },
+  })
+```
+
+**Composing styles with arrays:**
+
+```typescript
+const baseStyles = css({
+  padding: '12px 24px',
+  border: 'none',
+})
+
+const primaryStyles = css({
+  backgroundColor: '#007bff',
+  color: 'white',
+})
+
+const secondaryStyles = css({
+  backgroundColor: '#6c757d',
+  color: 'white',
+})
+
+const Button = ({ variant = 'primary' }) => {
+  return (
+    <button
+      css={[
+        baseStyles,
+        variant === 'primary' ? primaryStyles : secondaryStyles,
+      ]}
+    >
+      Click me
+    </button>
+  )
+}
+```
+
+---
+
+## 9. Nested Selectors and Pseudo Classes
+
+### Proper Nesting
+
+```typescript
+const cardStyles = css({
+  padding: '16px',
+  backgroundColor: 'white',
+  borderRadius: '8px',
+
+  // Pseudo classes
+  '&:hover': {
+    boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
+  },
+
+  '&:focus': {
+    outline: '2px solid #007bff',
+  },
+
+  // Child selectors
+  '& > button': {
+    marginLeft: '8px',
+  },
+
+  // Sibling selectors
+  '& + &': {
+    marginTop: '16px',
+  },
+})
+```
+
+---
+
+## 10. Media Queries
+
+### Responsive Styles
+
+**✅ Best Practice:**
+
+```typescript
+// Define breakpoints as constants
+const breakpoints = {
+  mobile: '@media (max-width: 767px)',
+  tablet: '@media (min-width: 768px) and (max-width: 1023px)',
+  desktop: '@media (min-width: 1024px)',
+} as const
+
+const containerStyles = css({
+  padding: '16px',
+
+  [breakpoints.mobile]: {
+    padding: '8px',
+  },
+
+  [breakpoints.tablet]: {
+    padding: '12px',
+  },
+
+  [breakpoints.desktop]: {
+    padding: '24px',
+  },
+})
+```
+
+---
+
+## 11. Global Styles
+
+### Define Global Styles
+
+```typescript
+import { Global, css } from '@emotion/react'
+
+const globalStyles = css({
+  '*': {
+    boxSizing: 'border-box',
+    margin: 0,
+    padding: 0,
+  },
+  'html, body': {
+    height: '100%',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  },
+})
+
+const App = () => {
+  return (
+    <>
+      <Global styles={globalStyles} />
+      {/* rest of app */}
+    </>
+  )
+}
+```
+
+---
+
+## 12. Anti-patterns to Avoid
+
+### ❌ Patterns to Avoid
+
+**1. Defining styles inside component**
+
+```typescript
+// ❌ Recreated on every render
+const Component = () => {
+  const styles = css({ color: 'red' })
+  return <div css={styles}>Hello</div>
+}
+```
+
+**2. Excessive nesting**
+
+```typescript
+// ❌ Over-nested
+const styles = css({
+  '& > div': {
+    '& > span': {
+      '& > a': {
+        color: 'red',
+      },
+    },
+  },
+})
+
+// ✅ Simplified
+const styles = css({
+  '& a': {
+    color: 'red',
+  },
+})
+```
+
+**3. Unnecessary string interpolation**
+
+```typescript
+// ❌ Unnecessary template literal
+const styles = css({
+  color: `${theme.colors.primary}`, // unnecessary ``
+})
+
+// ✅ Direct usage
+const styles = css({
+  color: theme.colors.primary,
+})
+```
+
+**4. Overusing !important**
+
+```typescript
+// ❌ Overusing !important
+const styles = css({
+  color: 'red !important',
+  fontSize: '16px !important',
+})
+
+// ✅ Increase specificity
+const styles = css({
+  '&&': {
+    color: 'red',
+    fontSize: '16px',
+  },
+})
+```
+
+---
+
+## 13. Package Setup
+
+### Required Dependencies
+
+```json
+{
+  "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@radix-ui/react-slot": "^1.2.3"
+  }
+}
+```
+
+### Vite Configuration
+
+```typescript
+// vite.config.ts
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react-swc'
+import tsconfigPaths from 'vite-tsconfig-paths'
+
+export default defineConfig({
+  plugins: [
+    react({
+      jsxImportSource: '@emotion/react',
+    }),
+    tsconfigPaths(),
+  ],
+})
+```
+
+### tsconfig.json
+
+```json
+{
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "@emotion/react",
+    "types": ["@emotion/react/types/css-prop"]
+  }
+}
+```
+
+---
+
+## 14. Checklist
+
+When using Emotion in your project, verify these items:
+
+- [ ] `jsxImportSource: "@emotion/react"` configured in tsconfig.app.json
+- [ ] Style functions defined outside components
+- [ ] `useMemo` used for dynamic styles
+- [ ] `SerializedStyles` type specified
+- [ ] Theme type extended (`emotion.d.ts`)
+- [ ] Object styles used (instead of template literals)
+- [ ] Render delegation pattern uses `Slottable`
+- [ ] Conditional styles written clearly
+- [ ] Nested selectors used only when necessary
+- [ ] Breakpoints defined as constants
+- [ ] `!important` usage minimized
+- [ ] Global styles use `<Global>` component
+
+---
+
+## 15. References
+
+- [Emotion Official Documentation](https://emotion.sh/docs/introduction)
+- [Emotion Best Practices](https://emotion.sh/docs/best-practices)
+- [Radix UI Slot](https://www.radix-ui.com/primitives/docs/utilities/slot)
+- [TypeScript with Emotion](https://emotion.sh/docs/typescript)
+
+---
+
+This guide is based on production-tested patterns.

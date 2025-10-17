@@ -13,7 +13,7 @@ export type TextToken = {
 
 export interface TextBaseProps {
   as?: React.ElementType
-  size: TextSize
+  size?: TextSize
   children?: React.ReactNode
   className?: string
   style?: React.CSSProperties
