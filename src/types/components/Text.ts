@@ -11,4 +11,13 @@ export type TextToken = {
   textDecoration?: 'none' | 'underline' | 'line-through'
 }
 
+export interface TextBaseProps {
+  as?: React.ElementType
+  size: TextSize
+  children?: React.ReactNode
+  className?: string
+  style?: React.CSSProperties
+  ref?: React.Ref<any>
+}
+
 export type TextScale = Record<TextVariant, Record<TextSize, TextToken>>
