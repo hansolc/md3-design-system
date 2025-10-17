@@ -1,8 +1,11 @@
 import { Display, Header, Title, Body, Label } from './components/Text'
 import Flex from './components/Flex'
 import Appbar from './components/Appbar'
+import Card from './components/Card'
+import type { ElevationLevel } from './styles/elevation'
 
 const size = ['lg', 'md', 'sm'] as const
+const elevationLevels: ElevationLevel[] = [0, 1, 2, 3, 4, 5]
 
 function App() {
   return (
@@ -17,8 +20,39 @@ function App() {
       </Appbar>
 
       {/* Flex 컴포넌트 직접 사용 예시 */}
-      <Flex direction="column" gap="16px" style={{ padding: '24px' }}>
-        <Display>Flex Component Demo</Display>
+      <Flex direction="column" gap="24px" style={{ padding: '24px' }}>
+        {/* Elevation Demo Section */}
+        <section>
+          <Display size="md" style={{ marginBottom: '16px' }}>
+            Material 3 Elevation System
+          </Display>
+          <Body style={{ marginBottom: '24px' }}>
+            Light/Dark 모드에 따라 자동으로 적용되는 elevation 값들입니다.
+          </Body>
+
+          <Flex direction="row" gap="24px" wrap="wrap">
+            {elevationLevels.map((level) => (
+              <Card
+                key={level}
+                elevation={level}
+                style={{ minWidth: '200px', minHeight: '150px' }}
+              >
+                <Flex
+                  direction="column"
+                  gap="8px"
+                  alignItems="center"
+                  justifyContent="center"
+                  style={{ height: '100%' }}
+                >
+                  <Title size="lg">Elevation {level}</Title>
+                  <Body>Box Shadow Level</Body>
+                </Flex>
+              </Card>
+            ))}
+          </Flex>
+        </section>
+
+        <Display>Text Component Demo</Display>
 
         <Flex direction="row" gap="8px" wrap="wrap">
           {size.map((size) => (
