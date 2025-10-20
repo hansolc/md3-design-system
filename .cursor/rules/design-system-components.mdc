@@ -327,6 +327,173 @@ export default Text
 
 ---
 
+## Icon Component Pattern
+
+### Using External Icon Libraries (react-icons)
+
+When building an Icon component with `react-icons`, follow this pattern for type-safe, reusable icons:
+
+**1. Define Icon Name Type and Props:**
+
+```typescript
+// types.ts
+export type IconName = 'menu' | 'close' | 'search' | 'favorite'
+// ... more icon names
+
+export interface IconProps extends React.HTMLAttributes<HTMLSpanElement> {
+  name: IconName // Required: Type-safe icon selection
+  size?: number // Optional: Icon size in pixels (default: 24)
+  color?: string // Optional: Icon color (defaults to theme color)
+}
+```
+
+**2. Create Icon Mapping:**
+
+```typescript
+// iconMap.ts
+import type { IconType } from 'react-icons'
+import {
+  MdMenu,
+  MdClose,
+  MdSearch,
+  MdFavorite,
+  // ... more imports
+} from 'react-icons/md'
+
+export const iconMap: Record<IconName, IconType> = {
+  menu: MdMenu,
+  close: MdClose,
+  search: MdSearch,
+  favorite: MdFavorite,
+  // ... more mappings
+}
+```
+
+**3. Component Implementation:**
+
+```typescript
+// Icon.tsx
+import { forwardRef, useMemo } from 'react'
+import { css, type Theme } from '@emotion/react'
+import { iconMap } from './iconMap'
+import type { IconProps } from './types'
+
+const getIconStyles = (theme: Theme, color?: string) =>
+  css({
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    color: color || theme.colors.onSurface,
+    transition: 'color 0.2s ease-in-out',
+  })
+
+const Icon = forwardRef<HTMLSpanElement, IconProps>(
+  ({ name, size = 24, color, className, style, ...restProps }, ref) => {
+    const IconComponent = iconMap[name]
+
+    if (!IconComponent) {
+      console.warn(`Icon "${name}" not found in iconMap`)
+      return null
+    }
+
+    return (
+      <span
+        ref={ref}
+        css={(theme: Theme) =>
+          useMemo(() => getIconStyles(theme, color), [theme, color])
+        }
+        className={className}
+        style={style}
+        {...restProps}
+      >
+        <IconComponent color={color} size={size} />
+      </span>
+    )
+  }
+)
+
+Icon.displayName = 'Icon'
+
+export default Icon
+```
+
+### Why Wrap with span?
+
+**Key reasons for span wrapper:**
+
+1. **ref forwarding**: `react-icons` components don't support ref directly
+2. **Emotion styles**: Apply container styles (display, alignment, transition)
+3. **HTML attributes**: Support className, style, onClick, etc.
+4. **Layout control**: Precise alignment with flexbox
+
+### Usage Examples
+
+```tsx
+// Basic usage
+<Icon name="menu" />
+
+// With size and color
+<Icon name="favorite" size={32} color="#68548E" />
+
+// In buttons
+<Button>
+  <Flex gap="8px" alignItems="center">
+    <Icon name="add" size={24} color="white" />
+    <span>Add Item</span>
+  </Flex>
+</Button>
+
+// With event handlers
+<Icon
+  name="search"
+  onClick={handleSearch}
+  style={{ cursor: 'pointer' }}
+/>
+```
+
+### Icon Component Benefits
+
+- **Type-safe**: IconName ensures only valid icons can be used
+- **Tree-shakable**: Only imported icons are bundled
+- **Flexible**: size and color can be customized per instance
+- **Consistent**: Integrates with theme color system
+- **DX-friendly**: Full TypeScript autocomplete support
+
+### Adding New Icons
+
+**Step 1:** Add icon name to type
+
+```typescript
+export type IconName = 'existing-icon' | 'new-icon' // Add here
+```
+
+**Step 2:** Import and map the icon
+
+```typescript
+import { MdNewIcon } from 'react-icons/md'
+
+export const iconMap: Record<IconName, IconType> = {
+  'new-icon': MdNewIcon, // Add mapping
+}
+```
+
+### Package Dependency
+
+```bash
+pnpm add react-icons
+```
+
+`react-icons` includes:
+
+- Material Design (md)
+- Font Awesome (fa)
+- Heroicons (hi)
+- Feather (fi)
+- And many more...
+
+---
+
 ## Summary Checklist
 
 - [ ] Theme type inference setup (no circular references)
@@ -337,5 +504,7 @@ export default Text
 - [ ] Only `@emotion/react` dependency (styled is optional)
 - [ ] Full TypeScript type safety maintained
 - [ ] ref forwarding works automatically
+- [ ] Icon components use type-safe name mapping with iconMap
+- [ ] External icon libraries wrapped with span for ref and style support
 
 This pattern is production-tested and used by major Korean tech companies (Toss, Kakao, Daangn).
