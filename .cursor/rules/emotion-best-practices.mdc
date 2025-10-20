@@ -63,23 +63,109 @@ const Button = ({ variant, size, children }) => {
 
 ---
 
+### 2.2 Style Props Type Separation (Advanced Pattern)
+
+When a component has multiple dynamic style properties, separate Props types to follow the DRY principle.
+
+**✅ Best Practice (Props Type Separation):**
+
+```typescript
+import { css, type SerializedStyles } from '@emotion/react'
+import type { CSSProperties } from 'react'
+
+// 1. Component behavior props
+interface _GridProps extends React.HTMLAttributes<HTMLDivElement> {
+  asChild?: boolean
+  children?: React.ReactNode
+}
+
+// 2. Style-specific props (reusable type)
+interface GridStylesProps {
+  gap?: CSSProperties['gap']
+  columns?: string | number
+  rows?: string | number
+}
+
+// 3. Combine both
+type GridProps = _GridProps & GridStylesProps
+
+// 4. Style function uses explicit destructuring - explicit and concise
+const createGridStyles = ({
+  gap, // ✅ Explicit destructuring
+  columns,
+  rows,
+}: GridStylesProps): SerializedStyles =>
+  css({
+    display: 'grid',
+    gap: gap, // ✅ Direct access - concise
+    gridTemplateColumns:
+      typeof columns === 'number' ? `repeat(${columns}, 1fr)` : columns,
+    gridTemplateRows: typeof rows === 'number' ? `repeat(${rows}, 1fr)` : rows,
+  })
+```
+
+**❌ Anti-pattern (Unnecessary Rest Operator):**
+
+```typescript
+// ❌ Unnecessary rest operator
+const createGridStyles = ({ ...styles }: GridStylesProps): SerializedStyles =>
+  css({
+    display: 'grid',
+    gap: styles.gap, // ❌ Verbose property access
+    gridTemplateColumns:
+      typeof styles.columns === 'number'
+        ? `repeat(${styles.columns}, 1fr)`
+        : styles.columns,
+  })
+```
+
+**Benefits:**
+
+- **DRY Principle**: Define style property types in one place only
+- **Readability**: `gap` vs `styles.gap` - shorter and clearer
+- **Intent Declaration**: Properties used are clearly visible in function signature
+- **Maintainability**: Only one place to modify when adding style properties
+
+### When to Use Props Type Separation?
+
+**✅ Use when:**
+
+- Components with 3+ dynamic style properties
+- Layout components (Flex, Grid, Stack)
+- Style function type reusability is needed
+
+**❌ Skip when:**
+
+- Components with only 1-2 style properties
+- Components with only static styles
+
+---
+
 ## 3. Performance Optimization - useMemo
 
 ### Use useMemo for Dynamic Styles
 
 When styles change based on props, use `useMemo` to prevent unnecessary recalculation.
 
-**✅ Best Practice:**
+**✅ Best Practice (with Props Type Separation):**
 
 ```typescript
-import { useMemo } from 'react'
+import { useMemo, type CSSProperties } from 'react'
 import { css, type SerializedStyles } from '@emotion/react'
 
-const createFlexStyles = (
-  direction?: CSSProperties['flexDirection'],
-  gap?: CSSProperties['gap'],
+// 1. Define style props type
+interface FlexStylesProps {
+  direction?: CSSProperties['flexDirection']
+  gap?: CSSProperties['gap']
   alignItems?: CSSProperties['alignItems']
-): SerializedStyles =>
+}
+
+// 2. Style function with explicit destructuring
+const createFlexStyles = ({
+  direction,
+  gap,
+  alignItems,
+}: FlexStylesProps): SerializedStyles =>
   css({
     display: 'flex',
     flexDirection: direction,
@@ -88,9 +174,9 @@ const createFlexStyles = (
   })
 
 const Flex = ({ direction, gap, alignItems, children }) => {
-  // Recalculate only when props change
+  // 3. Recalculate only when props change
   const flexStyles = useMemo(
-    () => createFlexStyles(direction, gap, alignItems),
+    () => createFlexStyles({ direction, gap, alignItems }),
     [direction, gap, alignItems]
   )
 
@@ -103,7 +189,7 @@ const Flex = ({ direction, gap, alignItems, children }) => {
 ```typescript
 const Flex = ({ direction, gap, alignItems, children }) => {
   // Recalculated on every render
-  const flexStyles = createFlexStyles(direction, gap, alignItems)
+  const flexStyles = createFlexStyles({ direction, gap, alignItems })
   return <div css={flexStyles}>{children}</div>
 }
 ```
@@ -240,27 +326,33 @@ const Text = () => {
 
 A pattern to merge component styles into child elements. More explicit and predictable than polymorphic pattern.
 
-**✅ Best Practice:**
+**✅ Best Practice (with Props Type Separation):**
 
 ```typescript
-import { forwardRef, useMemo } from 'react'
+import { forwardRef, useMemo, type CSSProperties } from 'react'
 import { Slot, Slottable } from '@radix-ui/react-slot'
 import { css, type SerializedStyles } from '@emotion/react'
 
-interface FlexProps extends React.HTMLAttributes<HTMLDivElement> {
+// 1. Separate component behavior and styling props
+interface _FlexProps extends React.HTMLAttributes<HTMLDivElement> {
   asChild?: boolean
   children?: React.ReactNode
+}
+
+interface FlexStylesProps {
   direction?: CSSProperties['flexDirection']
   gap?: CSSProperties['gap']
   alignItems?: CSSProperties['alignItems']
 }
 
-// 1. Define style function outside component
-const createFlexStyles = (
-  direction?: CSSProperties['flexDirection'],
-  gap?: CSSProperties['gap'],
-  alignItems?: CSSProperties['alignItems']
-): SerializedStyles =>
+type FlexProps = _FlexProps & FlexStylesProps
+
+// 2. Define style function with explicit destructuring
+const createFlexStyles = ({
+  direction,
+  gap,
+  alignItems,
+}: FlexStylesProps): SerializedStyles =>
   css({
     display: 'flex',
     flexDirection: direction,
@@ -270,13 +362,13 @@ const createFlexStyles = (
 
 const Flex = forwardRef<HTMLDivElement, FlexProps>(
   ({ asChild = false, children, direction, gap, alignItems, ...restProps }, ref) => {
-    // 2. Memoize styles
+    // 3. Memoize styles
     const flexStyles = useMemo(
-      () => createFlexStyles(direction, gap, alignItems),
+      () => createFlexStyles({ direction, gap, alignItems }),
       [direction, gap, alignItems]
     )
 
-    // 3. Render delegation with Slottable
+    // 4. Render delegation with Slottable
     const Comp = asChild ? Slot : 'div'
 
     return (
@@ -538,7 +630,42 @@ const Component = () => {
 }
 ```
 
-**2. Excessive nesting**
+**2. Unnecessary rest operator in style functions**
+
+```typescript
+// ❌ Meaningless rest operator
+const createStyles = ({ ...styles }: StyleProps) => {
+  return css({
+    gap: styles.gap, // Verbose
+    padding: styles.padding,
+  })
+}
+
+// ✅ Explicit destructuring
+const createStyles = ({ gap, padding }: StyleProps) => {
+  return css({
+    gap: gap, // Concise
+    padding: padding,
+  })
+}
+
+// 💡 Correct use of rest operator
+const createStyles = ({ gap, ...rest }: StyleProps) => {
+  return css({
+    gap: gap,
+    ...rest, // Spread the rest - meaningful usage
+  })
+}
+```
+
+**Why it's bad:**
+
+- `{ ...styles }` doesn't add any value - it just creates a new variable for the entire object
+- Leads to verbose property access (`styles.gap` vs `gap`)
+- Hides what properties are actually being used
+- Makes code harder to read and maintain
+
+**3. Excessive nesting**
 
 ```typescript
 // ❌ Over-nested
@@ -560,7 +687,7 @@ const styles = css({
 })
 ```
 
-**3. Unnecessary string interpolation**
+**4. Unnecessary string interpolation**
 
 ```typescript
 // ❌ Unnecessary template literal
@@ -574,7 +701,7 @@ const styles = css({
 })
 ```
 
-**4. Overusing !important**
+**5. Overusing !important**
 
 ```typescript
 // ❌ Overusing !important
@@ -645,8 +772,11 @@ When using Emotion in your project, verify these items:
 
 - [ ] `jsxImportSource: "@emotion/react"` configured in tsconfig.app.json
 - [ ] Style functions defined outside components
+- [ ] Props separated into behavior and styling types (for components with 3+ style props)
+- [ ] Style functions use explicit destructuring (not `{ ...styles }`)
 - [ ] `useMemo` used for dynamic styles
 - [ ] `SerializedStyles` type specified
+- [ ] Default values set in Props destructuring (for Storybook compatibility)
 - [ ] Theme type extended (`emotion.d.ts`)
 - [ ] Object styles used (instead of template literals)
 - [ ] Render delegation pattern uses `Slottable`
