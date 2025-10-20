@@ -26,19 +26,15 @@ const createGridStyles = ({
     gap: gap,
     gridTemplateColumns:
       typeof columns === 'number' ? `repeat(${columns}, 1fr)` : columns,
-    gridTemplateRows: typeof rows === 'number' ? `repeat(${rows}, 1fr)` : rows,
+    ...(rows !== undefined && {
+      gridTemplateRows:
+        typeof rows === 'number' ? `repeat(${rows}, 1fr)` : rows,
+    }),
   })
 
 const Grid = forwardRef<HTMLDivElement, GridProps>(
   (
-    {
-      asChild = false,
-      children,
-      gap = 16,
-      columns = 12,
-      rows = 12,
-      ...restProps
-    },
+    { asChild = false, children, gap = 16, columns = 12, rows, ...restProps },
     ref
   ) => {
     // Emotion best practice: useMemo로 스타일 메모이제이션
