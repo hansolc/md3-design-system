@@ -1,10 +1,57 @@
 # Design System Component Guidelines
 
+## Project Structure
+
+### Type Organization
+
+컴포넌트 관련 타입은 `src/types/components/`에 분리하여 작성합니다.
+
+```
+src/
+├── components/
+│   └── Button/
+│       ├── index.tsx          # Component implementation
+│       └── tokens.ts          # Design tokens (optional)
+└── types/
+    └── components/
+        ├── index.ts           # Re-export all component types
+        └── Button.ts          # Button-specific types
+```
+
+**타입 파일 예시:**
+
+```typescript
+// src/types/components/Button.ts
+export type ButtonVariant = 'filled' | 'outlined' | 'text'
+export type ButtonSize = 'sm' | 'md' | 'lg'
+
+export interface ButtonProps
+  extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: ButtonVariant
+  size?: ButtonSize
+  children?: React.ReactNode
+}
+```
+
+**컴포넌트에서 import:**
+
+```typescript
+// src/components/Button/index.tsx
+import type { ButtonProps } from '@/types/components/Button'
+```
+
+**Benefits:**
+
+- 타입과 구현의 명확한 분리
+- 타입 재사용 용이
+- 순환 참조 방지
+- 테스트 및 문서화 개선
+
+---
+
 ## Emotion Theme Type Inference Setup
 
 ### Theme Configuration Pattern
-
-When using Emotion for design systems, follow this pattern to enable proper TypeScript type inference:
 
 **1. Define theme object first, then extract type:**
 
@@ -14,6 +61,8 @@ import { textTokens } from '@/components/Text/tokens'
 
 export const theme = {
   text: textTokens,
+  colors: colorTokens,
+  elevation: elevationTokens,
 }
 
 export type AppTheme = typeof theme
@@ -47,22 +96,20 @@ export const theme: Theme = {
 - Define theme object without type annotation
 - Use `typeof` to extract the type
 - Extend Emotion's Theme interface in a separate declaration file
-- This enables full autocomplete and type safety in `css` prop and `useTheme()`
+- This enables full autocomplete and type safety
 
 ---
 
 ## Polymorphic Component Pattern
 
-### Component Structure
-
-For components that should render as different HTML elements (polymorphic), use this pattern:
+For components that should render as different HTML elements, use this pattern:
 
 **1. Define Props Interface:**
 
 ```typescript
 interface _ComponentProps {
-  variant?: VariantType // Optional with defaults
-  size?: SizeType // Optional with defaults
+  variant?: VariantType
+  size?: SizeType
   children?: React.ReactNode
 }
 
@@ -83,7 +130,13 @@ const Component: ComponentType = forwardRef(
     ref?: PolymorphicRef<T>['ref']
   ): React.ReactElement | null => {
     const Element = as || 'span'
-    return <Element ref={ref} {...props} />
+    return (
+      <Element
+        ref={ref}
+        css={(theme: Theme) => getComponentStyles(theme, variant, size)}
+        {...props}
+      />
+    )
   }
 ) as ComponentType
 ```
@@ -93,7 +146,7 @@ const Component: ComponentType = forwardRef(
 **TypeScript's forwardRef limitation:**
 
 - `forwardRef` doesn't fully support generic render functions
-- Required props cause type conflicts: `Omit<Props, 'ref'>` loses required properties
+- Required props cause type conflicts
 - **Solution:** Make props optional and provide default values
 
 ```typescript
@@ -102,26 +155,13 @@ interface Props {
   variant?: Variant // Optional
 }
 const Component = ({ variant = 'default' }: Props) => {} // Default value
-
-// ❌ Type error with forwardRef
-interface Props {
-  variant: Variant // Required - causes conflict
-}
 ```
 
 ### Type Assertion Pattern
 
-Always use type assertion at the end:
+Always use type assertion: `) as ComponentType`
 
-```typescript
-) as ComponentType
-```
-
-This is the **industry-standard pattern** because:
-
-- forwardRef doesn't natively support generic polymorphic components
-- Runtime behavior is correct
-- Type safety is maintained at the consumer level
+This is the **industry-standard pattern** for polymorphic components with forwardRef.
 
 ---
 
@@ -133,19 +173,18 @@ This is the **industry-standard pattern** because:
 
 ```typescript
 // Separated, testable, reusable
-const getTextStyle = (theme: Theme, variant: Variant, size: Size) => {
-  const token = theme.text[variant][size]
+const getComponentStyles = (theme: Theme, variant: Variant, size: Size) => {
   return css({
-    fontSize: `${token.fontSize}px`,
-    fontWeight: token.fontWeight,
-    lineHeight: `${token.lineHeight}px`,
-    letterSpacing: `${token.letterSpacing}px`,
+    // Access theme tokens
+    color: theme.colors[variant],
+    padding: theme.spacing[size],
+    borderRadius: theme.shape[size].borderRadius,
   })
 }
 
-const Component = () => {
+const Component = ({ variant, size }) => {
   return (
-    <Element css={(theme: Theme) => getTextStyle(theme, variant, size)} />
+    <Element css={(theme: Theme) => getComponentStyles(theme, variant, size)} />
   )
 }
 ```
@@ -161,9 +200,7 @@ const Component = () => {
 
 ```typescript
 // ❌ Hard to test, not reusable
-<Element css={css`
-  font-size: ${theme.text[variant][size].fontSize}px;
-`} />
+<Element css={css`font-size: 16px; color: blue;`} />
 ```
 
 ---
@@ -172,22 +209,10 @@ const Component = () => {
 
 ### Creating Variant-Specific Components
 
-When creating preset variants (Display, Title, Label, etc.), use simple wrapper pattern:
-
-**✅ Recommended Pattern:**
+When creating preset variants, use simple wrapper pattern:
 
 ```typescript
-// Base type for all variants
-type TextBaseProps = {
-  as?: React.ElementType
-  size?: TextSize
-  children?: React.ReactNode
-  className?: string
-  style?: React.CSSProperties
-  ref?: React.Ref<any>
-}
-
-// Variant components - no forwardRef needed
+// Base component already handles ref forwarding
 const Display = (props: TextBaseProps) => {
   return <Text variant="display" {...props} />
 }
@@ -199,46 +224,42 @@ const Title = (props: TextBaseProps) => {
 
 **Why no forwardRef?**
 
-- Base `Text` component already handles ref forwarding
+- Base component already handles ref forwarding
 - Wrapper just passes props through
 - Simpler, less boilerplate
-- ref support is automatic
-
-**Benefits:**
-
-- Explicit API: Only expose props you want
-- Type control: Prevent prop overload from `Pick`/`Omit`
-- Simple: No complex type gymnastics
-- ref works: Automatically forwarded to base component
 
 ---
 
-## Design Token Integration
+## External Library Integration
 
-### Token Structure
+### Wrapping External Components
 
-```typescript
-// tokens.ts
-export const textTokens: TextScale = {
-  display: {
-    lg: { fontWeight: 400, fontSize: 57, lineHeight: 64, letterSpacing: -0.25 },
-    md: { fontWeight: 400, fontSize: 45, lineHeight: 52, letterSpacing: 0 },
-    sm: { fontWeight: 400, fontSize: 36, lineHeight: 44, letterSpacing: 0 },
-  },
-  // ... more variants
-}
-```
-
-### Component Integration
+When integrating external libraries (e.g., `react-icons`), use wrapper pattern:
 
 ```typescript
-const getStyle = (theme: Theme, variant: Variant, size: Size) => {
-  const token = theme.text[variant][size] // Type-safe access
-  return css({
-    /* use token values */
-  })
-}
+const Component = forwardRef<HTMLSpanElement, ComponentProps>(
+  ({ name, size = 24, ...restProps }, ref) => {
+    const ExternalComponent = componentMap[name]
+
+    return (
+      <span
+        ref={ref}
+        css={(theme: Theme) => getStyles(theme)}
+        {...restProps}
+      >
+        <ExternalComponent size={size} />
+      </span>
+    )
+  }
+)
 ```
+
+**Why wrap with span/div?**
+
+- External components may not support ref
+- Apply Emotion styles to container
+- Support HTML attributes (className, onClick, etc.)
+- Control layout with flexbox
 
 ---
 
@@ -252,8 +273,7 @@ const getStyle = (theme: Theme, variant: Variant, size: Size) => {
 
 **Optional:**
 
-- `@emotion/styled` - If you prefer styled-components API
-- Most design systems (Toss, Kakao) use only `@emotion/react` with `css` prop
+- `@emotion/styled` - styled-components API (most design systems use only `@emotion/react`)
 
 **Vite Integration:**
 
@@ -271,240 +291,15 @@ export default defineConfig({
 
 ---
 
-## Complete Example
-
-```typescript
-// Text.tsx
-import { forwardRef } from 'react'
-import { css } from '@emotion/react'
-import type { Theme } from '@emotion/react'
-import type { PolymorphicComponentProps, PolymorphicRef } from '@/types/polymorphic'
-
-// 1. Props definition (optional + defaults)
-interface _TextProps {
-  variant?: 'display' | 'title' | 'body'
-  size?: 'lg' | 'md' | 'sm'
-  children?: React.ReactNode
-}
-
-type TextProps<T extends React.ElementType = 'span'> =
-  PolymorphicComponentProps<T, _TextProps>
-
-type TextComponent = <C extends React.ElementType = 'span'>(
-  props: TextProps<C> & { ref?: PolymorphicRef<C> }
-) => React.ReactElement | null
-
-// 2. Separated style logic
-const getTextStyle = (theme: Theme, variant: Variant, size: Size) => {
-  const token = theme.text[variant][size]
-  return css({
-    fontSize: `${token.fontSize}px`,
-    fontWeight: token.fontWeight,
-    lineHeight: `${token.lineHeight}px`,
-    letterSpacing: `${token.letterSpacing}px`,
-  })
-}
-
-// 3. Component implementation
-const Text: TextComponent = forwardRef(
-  <T extends React.ElementType = 'span'>(
-    { as, variant = 'body', size = 'lg', ...props }: TextProps<T>,
-    ref?: PolymorphicRef<T>['ref']
-  ): React.ReactElement | null => {
-    const Element = as || 'span'
-    return (
-      <Element
-        ref={ref}
-        css={(theme: Theme) => getTextStyle(theme, variant, size)}
-        {...props}
-      />
-    )
-  }
-) as TextComponent
-
-export default Text
-```
-
----
-
-## Icon Component Pattern
-
-### Using External Icon Libraries (react-icons)
-
-When building an Icon component with `react-icons`, follow this pattern for type-safe, reusable icons:
-
-**1. Define Icon Name Type and Props:**
-
-```typescript
-// types.ts
-export type IconName = 'menu' | 'close' | 'search' | 'favorite'
-// ... more icon names
-
-export interface IconProps extends React.HTMLAttributes<HTMLSpanElement> {
-  name: IconName // Required: Type-safe icon selection
-  size?: number // Optional: Icon size in pixels (default: 24)
-  color?: string // Optional: Icon color (defaults to theme color)
-}
-```
-
-**2. Create Icon Mapping:**
-
-```typescript
-// iconMap.ts
-import type { IconType } from 'react-icons'
-import {
-  MdMenu,
-  MdClose,
-  MdSearch,
-  MdFavorite,
-  // ... more imports
-} from 'react-icons/md'
-
-export const iconMap: Record<IconName, IconType> = {
-  menu: MdMenu,
-  close: MdClose,
-  search: MdSearch,
-  favorite: MdFavorite,
-  // ... more mappings
-}
-```
-
-**3. Component Implementation:**
-
-```typescript
-// Icon.tsx
-import { forwardRef, useMemo } from 'react'
-import { css, type Theme } from '@emotion/react'
-import { iconMap } from './iconMap'
-import type { IconProps } from './types'
-
-const getIconStyles = (theme: Theme, color?: string) =>
-  css({
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-    color: color || theme.colors.onSurface,
-    transition: 'color 0.2s ease-in-out',
-  })
-
-const Icon = forwardRef<HTMLSpanElement, IconProps>(
-  ({ name, size = 24, color, className, style, ...restProps }, ref) => {
-    const IconComponent = iconMap[name]
-
-    if (!IconComponent) {
-      console.warn(`Icon "${name}" not found in iconMap`)
-      return null
-    }
-
-    return (
-      <span
-        ref={ref}
-        css={(theme: Theme) =>
-          useMemo(() => getIconStyles(theme, color), [theme, color])
-        }
-        className={className}
-        style={style}
-        {...restProps}
-      >
-        <IconComponent color={color} size={size} />
-      </span>
-    )
-  }
-)
-
-Icon.displayName = 'Icon'
-
-export default Icon
-```
-
-### Why Wrap with span?
-
-**Key reasons for span wrapper:**
-
-1. **ref forwarding**: `react-icons` components don't support ref directly
-2. **Emotion styles**: Apply container styles (display, alignment, transition)
-3. **HTML attributes**: Support className, style, onClick, etc.
-4. **Layout control**: Precise alignment with flexbox
-
-### Usage Examples
-
-```tsx
-// Basic usage
-<Icon name="menu" />
-
-// With size and color
-<Icon name="favorite" size={32} color="#68548E" />
-
-// In buttons
-<Button>
-  <Flex gap="8px" alignItems="center">
-    <Icon name="add" size={24} color="white" />
-    <span>Add Item</span>
-  </Flex>
-</Button>
-
-// With event handlers
-<Icon
-  name="search"
-  onClick={handleSearch}
-  style={{ cursor: 'pointer' }}
-/>
-```
-
-### Icon Component Benefits
-
-- **Type-safe**: IconName ensures only valid icons can be used
-- **Tree-shakable**: Only imported icons are bundled
-- **Flexible**: size and color can be customized per instance
-- **Consistent**: Integrates with theme color system
-- **DX-friendly**: Full TypeScript autocomplete support
-
-### Adding New Icons
-
-**Step 1:** Add icon name to type
-
-```typescript
-export type IconName = 'existing-icon' | 'new-icon' // Add here
-```
-
-**Step 2:** Import and map the icon
-
-```typescript
-import { MdNewIcon } from 'react-icons/md'
-
-export const iconMap: Record<IconName, IconType> = {
-  'new-icon': MdNewIcon, // Add mapping
-}
-```
-
-### Package Dependency
-
-```bash
-pnpm add react-icons
-```
-
-`react-icons` includes:
-
-- Material Design (md)
-- Font Awesome (fa)
-- Heroicons (hi)
-- Feather (fi)
-- And many more...
-
----
-
 ## Summary Checklist
 
+- [ ] Component types defined in `src/types/components/`
 - [ ] Theme type inference setup (no circular references)
 - [ ] Props are optional with default values (for forwardRef compatibility)
 - [ ] Style logic separated into functions
 - [ ] Type assertion `as ComponentType` used
 - [ ] Component composition uses simple wrappers (no redundant forwardRef)
-- [ ] Only `@emotion/react` dependency (styled is optional)
+- [ ] External libraries wrapped properly for ref and style support
 - [ ] Full TypeScript type safety maintained
-- [ ] ref forwarding works automatically
-- [ ] Icon components use type-safe name mapping with iconMap
-- [ ] External icon libraries wrapped with span for ref and style support
 
 This pattern is production-tested and used by major Korean tech companies (Toss, Kakao, Daangn).
